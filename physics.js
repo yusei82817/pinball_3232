@@ -42,7 +42,7 @@ export function isBallActive() { return ballActive; }
 export function launchBall() {
     if (!ball || ballActive) return;
     ballActive = true;
-    ball.vx = (Math.random() - 0.5) * 3.0;
+    ball.vx = (Math.random() - 0.5) * 7.0;
     ball.vy = -16;
 }
 
