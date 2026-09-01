@@ -18,10 +18,20 @@ let ballActive = false;
 const bumpers = [];
 const flippers = { left: null, right: null };
 
+// 発射レーン。フリッパーより上にボールを置く。
+const BALL_START_X = 525;
+const BALL_START_Y = 700;
+
 export async function createPhysics() {}
 
 export function createBall() {
-    ball = { x: 300, y: 805, vx: 0, vy: 0, radius: BALL_RADIUS };
+    ball = {
+        x: BALL_START_X,
+        y: BALL_START_Y,
+        vx: 0,
+        vy: 0,
+        radius: BALL_RADIUS
+    };
     ballActive = false;
     return ball;
 }
@@ -32,14 +42,14 @@ export function isBallActive() { return ballActive; }
 export function launchBall() {
     if (!ball || ballActive) return;
     ballActive = true;
-    ball.vx = (Math.random() - 0.5) * 3;
-    ball.vy = -15;
+    ball.vx = (Math.random() - 0.5) * 1.5;
+    ball.vy = -16;
 }
 
 export function resetBall() {
     if (!ball) return;
-    ball.x = 300;
-    ball.y = 805;
+    ball.x = BALL_START_X;
+    ball.y = BALL_START_Y;
     ball.vx = 0;
     ball.vy = 0;
     ballActive = false;
@@ -79,9 +89,12 @@ export function getFlippers() { return flippers; }
 export function setFlipperTarget(side, pressed) {
     const flipper = flippers[side];
     if (!flipper) return;
-    flipper.targetAngle = pressed
-        ? (side === "left" ? -0.95 : 0.95)
-        : 0;
+
+    if (pressed) {
+        flipper.targetAngle = side === "left" ? -0.95 : 0.95;
+    } else {
+        flipper.targetAngle = 0;
+    }
 }
 
 export function getFlipperAngle(side) {
@@ -93,8 +106,10 @@ function updateFlippers() {
     for (const side of ["left", "right"]) {
         const flipper = flippers[side];
         if (!flipper) continue;
+
         const difference = flipper.targetAngle - flipper.currentAngle;
         flipper.currentAngle += difference * flipper.speed;
+
         if (Math.abs(difference) < 0.002) {
             flipper.currentAngle = flipper.targetAngle;
         }
@@ -102,15 +117,19 @@ function updateFlippers() {
 }
 
 function clampSpeed() {
+    if (!ball) return;
+
     const speed = Math.hypot(ball.vx, ball.vy);
-    if (speed > MAX_SPEED) {
-        const scale = MAX_SPEED / speed;
-        ball.vx *= scale;
-        ball.vy *= scale;
-    }
+    if (speed <= MAX_SPEED) return;
+
+    const scale = MAX_SPEED / speed;
+    ball.vx *= scale;
+    ball.vy *= scale;
 }
 
 function collideWithWalls() {
+    if (!ball) return;
+
     const minX = 38 + ball.radius;
     const maxX = 562 - ball.radius;
     const minY = 38 + ball.radius;
@@ -119,29 +138,21 @@ function collideWithWalls() {
         ball.x = minX;
         ball.vx = Math.abs(ball.vx) * WALL_BOUNCE;
     }
+
     if (ball.x > maxX) {
         ball.x = maxX;
         ball.vx = -Math.abs(ball.vx) * WALL_BOUNCE;
     }
+
     if (ball.y < minY) {
         ball.y = minY;
         ball.vy = Math.abs(ball.vy) * WALL_BOUNCE;
     }
 }
 
-function collideWithBottom() {
-    if (ball.y < 820) return;
-
-    if (ball.x < 120 || ball.x > 480) {
-        const bottom = 880 - ball.radius;
-        if (ball.y > bottom) {
-            ball.y = bottom;
-            ball.vy = -Math.abs(ball.vy) * WALL_BOUNCE;
-        }
-    }
-}
-
 function collideWithBumpers() {
+    if (!ball) return;
+
     for (const bumper of bumpers) {
         const dx = ball.x - bumper.x;
         const dy = ball.y - bumper.y;
@@ -157,6 +168,7 @@ function collideWithBumpers() {
         ball.y = bumper.y + ny * minimum;
 
         const velocityAlongNormal = ball.vx * nx + ball.vy * ny;
+
         if (velocityAlongNormal < 0) {
             ball.vx -= 2 * velocityAlongNormal * nx;
             ball.vy -= 2 * velocityAlongNormal * ny;
@@ -169,26 +181,29 @@ function collideWithBumpers() {
 }
 
 function collideWithFlipper(flipper) {
-    if (!flipper) return;
+    if (!ball || !flipper) return false;
 
     const direction = flipper.side === "left" ? 1 : -1;
     const angle = flipper.currentAngle;
+
     const dx = Math.cos(angle) * direction;
     const dy = Math.sin(angle) * direction;
 
     const px = ball.x - flipper.x;
     const py = ball.y - flipper.y;
+
     let projection = px * dx + py * dy;
     projection = Math.max(0, Math.min(flipper.length, projection));
 
     const closestX = flipper.x + dx * projection;
     const closestY = flipper.y + dy * projection;
+
     const diffX = ball.x - closestX;
     const diffY = ball.y - closestY;
     const distance = Math.hypot(diffX, diffY);
     const minimum = ball.radius + flipper.width / 2;
 
-    if (distance >= minimum) return;
+    if (distance >= minimum) return false;
 
     const nx = distance > 0.001 ? diffX / distance : 0;
     const ny = distance > 0.001 ? diffY / distance : -1;
@@ -197,6 +212,7 @@ function collideWithFlipper(flipper) {
     ball.y = closestY + ny * minimum;
 
     const velocityAlongNormal = ball.vx * nx + ball.vy * ny;
+
     if (velocityAlongNormal < 0) {
         ball.vx -= 2 * velocityAlongNormal * nx;
         ball.vy -= 2 * velocityAlongNormal * ny;
@@ -206,12 +222,29 @@ function collideWithFlipper(flipper) {
         ball.vy -= 7;
         ball.vx += nx * 2;
     }
+
+    return true;
+}
+
+function collideWithBottom() {
+    if (!ball) return;
+    if (ball.y < 820) return;
+
+    // 中央はドレイン。左右のポケットだけ底壁を作る。
+    if (ball.x < 120 || ball.x > 480) {
+        const bottom = 880 - ball.radius;
+        if (ball.y > bottom) {
+            ball.y = bottom;
+            ball.vy = -Math.abs(ball.vy) * WALL_BOUNCE;
+        }
+    }
 }
 
 export function stepPhysics() {
     if (!ball) return;
 
     updateFlippers();
+
     for (const bumper of bumpers) {
         if (bumper.flash > 0) bumper.flash--;
     }
@@ -221,6 +254,7 @@ export function stepPhysics() {
     ball.vy += GRAVITY;
     ball.vx *= AIR_DAMPING;
     ball.vy *= AIR_DAMPING;
+
     ball.x += ball.vx;
     ball.y += ball.vy;
 
@@ -229,5 +263,6 @@ export function stepPhysics() {
     collideWithBumpers();
     collideWithFlipper(flippers.left);
     collideWithFlipper(flippers.right);
+
     clampSpeed();
 }
