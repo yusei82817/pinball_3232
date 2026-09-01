@@ -42,8 +42,8 @@ export function isBallActive() { return ballActive; }
 export function launchBall() {
     if (!ball || ballActive) return;
     ballActive = true;
-    ball.vx = (Math.random() - 0.5) * 7.0;
-    ball.vy = -16;
+    ball.vx = (Math.random() - 0.5) * 9.0;
+    ball.vy = -12;
 }
 
 export function resetBall() {
