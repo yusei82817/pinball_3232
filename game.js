@@ -1,10 +1,8 @@
 // ============================================================
-// 3D PINBALL
+// 2D PINBALL
 // game.js
+// Canvas 2D rendering + game loop
 // ============================================================
-
-import * as THREE from
-    "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js";
 
 import {
     createPhysics,
@@ -19,292 +17,282 @@ import {
     launchBall,
     resetBall,
     isBallActive,
-    isBallLost
+    isBallLost,
+    getBumpers,
+    getFlippers
 } from "./physics.js";
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x050505);
+const canvas = document.getElementById("game");
+if (!canvas) throw new Error("#game canvas was not found.");
 
-const camera = new THREE.PerspectiveCamera(
-    55,
-    window.innerWidth / window.innerHeight,
-    0.1,
-    1000
-);
-
-camera.position.set(0, 18, 18);
-camera.lookAt(0, 0, 0);
-
-const renderer = new THREE.WebGLRenderer({
-    antialias: true
-});
-
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
-const gameElement = document.getElementById("game");
-
-if (!gameElement) {
-    throw new Error("#game element was not found.");
-}
-
-gameElement.appendChild(renderer.domElement);
-
-const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
-scene.add(ambientLight);
-
-const directionalLight = new THREE.DirectionalLight(0xffffff, 2.5);
-directionalLight.position.set(0, 15, 5);
-directionalLight.castShadow = true;
-scene.add(directionalLight);
-
-const pointLight = new THREE.PointLight(0xffffff, 80, 30);
-pointLight.position.set(0, 8, 0);
-scene.add(pointLight);
-
-const tableMaterial = new THREE.MeshStandardMaterial({
-    color: 0x151515,
-    metalness: 0.3,
-    roughness: 0.7
-});
-
-const wallMaterial = new THREE.MeshStandardMaterial({
-    color: 0x444444,
-    metalness: 0.7,
-    roughness: 0.3
-});
-
-const ballMaterial = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    metalness: 0.9,
-    roughness: 0.15
-});
-
-const bumperMaterial = new THREE.MeshStandardMaterial({
-    color: 0xffcc00,
-    emissive: 0x442200,
-    metalness: 0.5,
-    roughness: 0.3
-});
-
-const flipperMaterial = new THREE.MeshStandardMaterial({
-    color: 0xff3333,
-    emissive: 0x330000,
-    metalness: 0.4,
-    roughness: 0.3
-});
-
-const TABLE_WIDTH = 12;
-const TABLE_LENGTH = 20;
-const BALL_RADIUS = 0.45;
-
-let score = 0;
-let gameOver = false;
-let balls = 3;
+const ctx = canvas.getContext("2d");
+if (!ctx) throw new Error("Canvas 2D context is not available.");
 
 const scoreElement = document.getElementById("score");
+const ballsElement = document.getElementById("balls");
 
-function updateScoreUI() {
-    if (scoreElement) {
-        scoreElement.textContent = score;
-    }
+const TABLE_WIDTH = 600;
+const TABLE_HEIGHT = 900;
+const BALL_RADIUS = 14;
+
+let score = 0;
+let balls = 3;
+let gameOver = false;
+
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+function resizeCanvas() {
+    const maxWidth = Math.min(window.innerWidth - 24, TABLE_WIDTH);
+    const maxHeight = Math.min(window.innerHeight - 24, TABLE_HEIGHT);
+    const scale = Math.min(maxWidth / TABLE_WIDTH, maxHeight / TABLE_HEIGHT);
+
+    canvas.style.width = `${TABLE_WIDTH * scale}px`;
+    canvas.style.height = `${TABLE_HEIGHT * scale}px`;
+    canvas.width = TABLE_WIDTH * dpr;
+    canvas.height = TABLE_HEIGHT * dpr;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+resizeCanvas();
+window.addEventListener("resize", resizeCanvas);
+
+function updateUI() {
+    if (scoreElement) scoreElement.textContent = score;
+    if (ballsElement) ballsElement.textContent = balls;
 }
 
 function addScore(value) {
     score += value;
-    updateScoreUI();
+    updateUI();
 }
 
-const tableGeometry = new THREE.BoxGeometry(
-    TABLE_WIDTH,
-    0.5,
-    TABLE_LENGTH
-);
-
-const tableMesh = new THREE.Mesh(
-    tableGeometry,
-    tableMaterial
-);
-
-tableMesh.position.set(0, -0.25, 0);
-tableMesh.receiveShadow = true;
-scene.add(tableMesh);
-
-function createVisualWall(x, y, z, width, height, depth) {
-    const geometry = new THREE.BoxGeometry(width, height, depth);
-    const mesh = new THREE.Mesh(geometry, wallMaterial);
-
-    mesh.position.set(x, y, z);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-
-    scene.add(mesh);
-    return mesh;
-}
-
-createVisualWall(-6, 0.5, 0, 0.5, 1, 20);
-createVisualWall(6, 0.5, 0, 0.5, 1, 20);
-createVisualWall(0, 0.5, -10, 12, 1, 0.5);
+// ------------------------------------------------------------
+// Physics setup
+// ------------------------------------------------------------
 
 await createPhysics();
 
-createWall(-6, 0.5, 0, 0.5, 1, 20);
-createWall(6, 0.5, 0, 0.5, 1, 20);
-createWall(0, 0.5, -10, 12, 1, 0.5);
+// Physics coordinates are in the same 600x900 coordinate space.
+createWall(20, 450, 0, 40, 900, 40);
+createWall(580, 450, 0, 40, 900, 40);
+createWall(300, 20, 0, 560, 40, 40);
 
-const ballGeometry = new THREE.SphereGeometry(
-    BALL_RADIUS,
-    32,
-    32
-);
-
-const ballMesh = new THREE.Mesh(
-    ballGeometry,
-    ballMaterial
-);
-
-ballMesh.castShadow = true;
-ballMesh.receiveShadow = true;
-scene.add(ballMesh);
-
-// physics.jsからボールのRigidBodyを作成
 createBall();
 const ballBody = getBallBody();
 
-function syncBall() {
-    if (!ballBody) {
-        return;
-    }
-
-    const position = ballBody.translation();
-    const rotation = ballBody.rotation();
-
-    ballMesh.position.set(
-        position.x,
-        position.y,
-        position.z
-    );
-
-    ballMesh.quaternion.set(
-        rotation.x,
-        rotation.y,
-        rotation.z,
-        rotation.w
-    );
-}
-
 const bumperPositions = [
-    [-3, -2],
-    [0, -3],
-    [3, -2],
-    [-2, 1],
-    [2, 1]
+    [180, 250],
+    [300, 200],
+    [420, 250],
+    [220, 360],
+    [380, 360]
 ];
 
-const bumperMeshes = [];
-
-for (const [x, z] of bumperPositions) {
-    const geometry = new THREE.CylinderGeometry(
-        0.9,
-        0.9,
-        0.8,
-        32
-    );
-
-    const mesh = new THREE.Mesh(
-        geometry,
-        bumperMaterial
-    );
-
-    mesh.position.set(x, 0.5, z);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-
-    scene.add(mesh);
-    bumperMeshes.push(mesh);
-
-    createBumper(x, z);
+for (const [x, y] of bumperPositions) {
+    createBumper(x, y);
 }
 
-function updateBumpers() {
-    for (const mesh of bumperMeshes) {
-        mesh.rotation.y += 0.01;
-    }
-}
+createFlipper(220, 760, "left");
+createFlipper(380, 760, "right");
 
-const flipperGeometry = new THREE.BoxGeometry(
-    3,
-    0.35,
-    0.65
-);
+// ------------------------------------------------------------
+// Input
+// ------------------------------------------------------------
 
-const leftFlipper = new THREE.Mesh(
-    flipperGeometry,
-    flipperMaterial
-);
-
-leftFlipper.position.set(-2.2, 0.7, 7);
-leftFlipper.castShadow = true;
-leftFlipper.receiveShadow = true;
-scene.add(leftFlipper);
-
-const rightFlipper = new THREE.Mesh(
-    flipperGeometry,
-    flipperMaterial
-);
-
-rightFlipper.position.set(2.2, 0.7, 7);
-rightFlipper.castShadow = true;
-rightFlipper.receiveShadow = true;
-scene.add(rightFlipper);
-
-createFlipper(-2.2, 7, "left");
-createFlipper(2.2, 7, "right");
-
-const keys = {};
+const keys = Object.create(null);
 
 window.addEventListener("keydown", event => {
     keys[event.code] = true;
 
     if (event.code === "Space") {
         event.preventDefault();
-
-        if (!gameOver && !isBallActive()) {
-            launchBall();
-        }
+        if (!gameOver && !isBallActive()) launchBall();
     }
 
-    if (event.code === "KeyR") {
-        resetGame();
-    }
+    if (event.code === "KeyR") resetGame();
 });
 
 window.addEventListener("keyup", event => {
     keys[event.code] = false;
 });
 
-function updateFlippers() {
-    setFlipperTarget("left", !!keys["KeyA"]);
-    setFlipperTarget("right", !!keys["KeyD"]);
+function updateInput() {
+    setFlipperTarget("left", !!keys.KeyA);
+    setFlipperTarget("right", !!keys.KeyD);
 }
 
-function updateFlipperVisuals() {
-    leftFlipper.rotation.y = getFlipperAngle("left");
-    rightFlipper.rotation.y = getFlipperAngle("right");
+// ------------------------------------------------------------
+// Drawing
+// ------------------------------------------------------------
+
+function drawTable() {
+    ctx.clearRect(0, 0, TABLE_WIDTH, TABLE_HEIGHT);
+
+    ctx.fillStyle = "#07110b";
+    ctx.fillRect(0, 0, TABLE_WIDTH, TABLE_HEIGHT);
+
+    // Inner playfield
+    ctx.fillStyle = "#102b1b";
+    ctx.fillRect(20, 20, 560, 860);
+
+    // Grid
+    ctx.strokeStyle = "rgba(100,255,150,0.08)";
+    ctx.lineWidth = 1;
+
+    for (let x = 40; x < 580; x += 40) {
+        ctx.beginPath();
+        ctx.moveTo(x, 20);
+        ctx.lineTo(x, 880);
+        ctx.stroke();
+    }
+
+    for (let y = 40; y < 880; y += 40) {
+        ctx.beginPath();
+        ctx.moveTo(20, y);
+        ctx.lineTo(580, y);
+        ctx.stroke();
+    }
+
+    // Outer frame
+    ctx.strokeStyle = "#d8d8d8";
+    ctx.lineWidth = 12;
+    ctx.strokeRect(20, 20, 560, 860);
+
+    // Inner frame
+    ctx.strokeStyle = "#777";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(32, 32, 536, 836);
+
+    // Bottom drain opening
+    ctx.fillStyle = "#030303";
+    ctx.fillRect(120, 820, 360, 60);
+
+    ctx.strokeStyle = "#888";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(120, 820);
+    ctx.lineTo(480, 820);
+    ctx.stroke();
 }
+
+function drawBumpers() {
+    for (const bumper of getBumpers()) {
+        const { x, y, radius, flash } = bumper;
+
+        ctx.beginPath();
+        ctx.arc(x, y, radius + 6, 0, Math.PI * 2);
+        ctx.fillStyle = flash > 0 ? "#fff6a0" : "#4d3500";
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = flash > 0 ? "#ffffff" : "#ffd21a";
+        ctx.fill();
+
+        ctx.strokeStyle = "#fff3a0";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+    }
+}
+
+function drawFlipper(flipper) {
+    const angle = getFlipperAngle(flipper.side);
+    const length = flipper.length;
+    const x = flipper.x;
+    const y = flipper.y;
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+
+    ctx.beginPath();
+    ctx.roundRect(
+        flipper.side === "left" ? 0 : -length,
+        -flipper.width / 2,
+        length,
+        flipper.width,
+        flipper.width / 2
+    );
+
+    ctx.fillStyle = "#e33";
+    ctx.fill();
+
+    ctx.strokeStyle = "#ff9999";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(0, 0, 12, 0, Math.PI * 2);
+    ctx.fillStyle = "#ddd";
+    ctx.fill();
+
+    ctx.restore();
+}
+
+function drawFlippers() {
+    const flippers = getFlippers();
+    drawFlipper(flippers.left);
+    drawFlipper(flippers.right);
+}
+
+function drawBall() {
+    if (!ballBody) return;
+
+    const p = ballBody.translation();
+
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, BALL_RADIUS, 0, Math.PI * 2);
+    ctx.fillStyle = "#eeeeee";
+    ctx.fill();
+
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(p.x - 4, p.y - 4, 3, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+}
+
+function drawGameOver() {
+    if (!gameOver) return;
+
+    ctx.fillStyle = "rgba(0,0,0,0.75)";
+    ctx.fillRect(60, 350, 480, 180);
+
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(60, 350, 480, 180);
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 42px sans-serif";
+    ctx.fillText("GAME OVER", 300, 425);
+
+    ctx.font = "20px sans-serif";
+    ctx.fillText("Press R to restart", 300, 475);
+    ctx.textAlign = "left";
+}
+
+function render() {
+    drawTable();
+    drawBumpers();
+    drawFlippers();
+    drawBall();
+    drawGameOver();
+}
+
+// ------------------------------------------------------------
+// Game state
+// ------------------------------------------------------------
 
 function updateBallState() {
-    if (!isBallActive()) {
-        return;
-    }
-
-    if (!isBallLost()) {
-        return;
-    }
+    if (!isBallActive() || !isBallLost()) return;
 
     balls--;
+    updateUI();
 
     if (balls <= 0) {
         gameOver = true;
@@ -318,37 +306,21 @@ function resetGame() {
     score = 0;
     balls = 3;
     gameOver = false;
-
-    updateScoreUI();
     resetBall();
+    updateUI();
 }
 
-window.addEventListener("resize", () => {
-    camera.aspect =
-        window.innerWidth / window.innerHeight;
-
-    camera.updateProjectionMatrix();
-
-    renderer.setSize(
-        window.innerWidth,
-        window.innerHeight
-    );
-});
+// ------------------------------------------------------------
+// Main loop
+// ------------------------------------------------------------
 
 function animate() {
     requestAnimationFrame(animate);
 
-    updateFlippers();
+    updateInput();
     stepPhysics();
-
-    syncBall();
-    updateFlipperVisuals();
     updateBallState();
-    updateBumpers();
-
-    camera.lookAt(0, 0, 0);
-
-    renderer.render(scene, camera);
+    render();
 }
 
 resetGame();
