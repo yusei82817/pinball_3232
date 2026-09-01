@@ -1,179 +1,87 @@
 // ============================================================
-// 3D PINBALL - physics.js
+// 2D PINBALL
+// physics.js
+// Lightweight 2D physics for Canvas
 // ============================================================
 
-import RAPIER from "https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat/+esm";
+const TABLE_WIDTH = 600;
+const TABLE_HEIGHT = 900;
+const BALL_RADIUS = 14;
+const GRAVITY = 0.28;
+const AIR_DAMPING = 0.999;
+const WALL_BOUNCE = 0.82;
+const MAX_SPEED = 22;
 
-let initialized = false;
-let world = null;
-let ballBody = null;
+let ball = null;
 let ballActive = false;
 
+const bumpers = [];
 const flippers = { left: null, right: null };
 
-// Three.js側の台の上面は y = 0
-// ボール・バンパー・フリッパーをこの高さ基準で統一する。
-const TABLE_TOP = 0;
-const BALL_RADIUS = 0.45;
-
-export async function createPhysics() {
-    if (initialized) return;
-    await RAPIER.init();
-    world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
-    initialized = true;
-}
-
-export function getWorld() {
-    return world;
-}
+export async function createPhysics() {}
 
 export function createBall() {
-    if (!world) throw new Error("Physics world has not been initialized.");
-
-    const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
-        .setTranslation(0, TABLE_TOP + BALL_RADIUS + 0.05, 7)
-        .setLinearDamping(0.05)
-        .setAngularDamping(0.05);
-
-    ballBody = world.createRigidBody(bodyDesc);
-
-    const colliderDesc = RAPIER.ColliderDesc.ball(BALL_RADIUS);
-    colliderDesc.setRestitution(0.85);
-    colliderDesc.setFriction(0.05);
-
-    world.createCollider(colliderDesc, ballBody);
+    ball = { x: 300, y: 805, vx: 0, vy: 0, radius: BALL_RADIUS };
     ballActive = false;
-
-    return ballBody;
+    return ball;
 }
 
-export function getBallBody() {
-    return ballBody;
-}
-
-export function isBallActive() {
-    return ballActive;
-}
+export function getBallBody() { return ball; }
+export function isBallActive() { return ballActive; }
 
 export function launchBall() {
-    if (!ballBody || ballActive) return;
-
+    if (!ball || ballActive) return;
     ballActive = true;
-
-    ballBody.setLinvel({
-        x: (Math.random() - 0.5) * 2,
-        y: 2,
-        z: -12
-    }, true);
-
-    ballBody.setAngvel({ x: 0, y: 0, z: 5 }, true);
+    ball.vx = (Math.random() - 0.5) * 3;
+    ball.vy = -15;
 }
 
 export function resetBall() {
-    if (!ballBody) return;
-
-    ballBody.setTranslation({
-        x: 0,
-        y: TABLE_TOP + BALL_RADIUS + 0.05,
-        z: 7
-    }, true);
-
-    ballBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
-    ballBody.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    if (!ball) return;
+    ball.x = 300;
+    ball.y = 805;
+    ball.vx = 0;
+    ball.vy = 0;
     ballActive = false;
 }
 
 export function isBallLost() {
-    if (!ballBody) return false;
-
-    const position = ballBody.translation();
-
-    return position.z > 11 || position.y < -3;
+    return !!ball && ball.y > TABLE_HEIGHT + 30;
 }
 
 export function createWall(x, y, z, width, height, depth) {
-    if (!world) throw new Error("Physics world has not been initialized.");
-
-    const body = world.createRigidBody(
-        RAPIER.RigidBodyDesc.fixed().setTranslation(x, y, z)
-    );
-
-    const colliderDesc = RAPIER.ColliderDesc.cuboid(
-        width / 2,
-        height / 2,
-        depth / 2
-    );
-
-    colliderDesc.setRestitution(0.8);
-    colliderDesc.setFriction(0.1);
-
-    world.createCollider(colliderDesc, body);
-    return body;
+    return { x, y, width, height };
 }
 
-export function createBumper(x, z) {
-    if (!world) throw new Error("Physics world has not been initialized.");
-
-    // 見た目のバンパーは高さ0.8、中心0.4。
-    // 台面(y=0)に底面を合わせ、Colliderが台の下へ潜らないようにする。
-    const bodyY = TABLE_TOP + 0.4;
-
-    const body = world.createRigidBody(
-        RAPIER.RigidBodyDesc.fixed().setTranslation(x, bodyY, z)
-    );
-
-    const colliderDesc = RAPIER.ColliderDesc.cylinder(0.4, 0.9);
-    colliderDesc.setRestitution(1.0);
-    colliderDesc.setFriction(0.05);
-
-    world.createCollider(colliderDesc, body);
-    return body;
+export function createBumper(x, y) {
+    const bumper = { x, y, radius: 28, flash: 0 };
+    bumpers.push(bumper);
+    return bumper;
 }
 
-export function createFlipper(x, z, side) {
-    if (!world) throw new Error("Physics world has not been initialized.");
+export function getBumpers() { return bumpers; }
 
-    const body = world.createRigidBody(
-        RAPIER.RigidBodyDesc.kinematicPositionBased()
-            .setTranslation(x, TABLE_TOP + 0.45, z)
-    );
-
-    const colliderDesc = RAPIER.ColliderDesc.cuboid(1.5, 0.175, 0.325);
-
-    colliderDesc.setTranslation(
-        side === "left" ? 1.5 : -1.5,
-        0,
-        0
-    );
-
-    colliderDesc.setRestitution(0.4);
-    colliderDesc.setFriction(0.4);
-
-    world.createCollider(colliderDesc, body);
-
+export function createFlipper(x, y, side) {
     const flipper = {
-        body,
-        side,
-        x,
-        z,
+        x, y, side,
+        length: 100,
+        width: 22,
         currentAngle: 0,
         targetAngle: 0,
-        speed: 0.35
+        speed: 0.32
     };
-
     flippers[side] = flipper;
     return flipper;
 }
 
+export function getFlippers() { return flippers; }
+
 export function setFlipperTarget(side, pressed) {
     const flipper = flippers[side];
     if (!flipper) return;
-
-    if (pressed) {
-        flipper.targetAngle = side === "left" ? -0.8 : 0.8;
-    } else {
-        flipper.targetAngle = 0;
-    }
+    flipper.targetAngle = pressed
+        ? (side === "left" ? -0.95 : 0.95)
+        : 0;
 }
 
 export function getFlipperAngle(side) {
@@ -181,37 +89,145 @@ export function getFlipperAngle(side) {
     return flipper ? flipper.currentAngle : 0;
 }
 
-function updateFlipper(flipper) {
-    if (!flipper) return;
-
-    const difference = flipper.targetAngle - flipper.currentAngle;
-    let next = flipper.currentAngle + difference * flipper.speed;
-
-    if (Math.abs(difference) < 0.001) next = flipper.targetAngle;
-
-    flipper.currentAngle = next;
-
-    const half = next / 2;
-
-    flipper.body.setNextKinematicRotation({
-        x: 0,
-        y: Math.sin(half),
-        z: 0,
-        w: Math.cos(half)
-    }, true);
+function updateFlippers() {
+    for (const side of ["left", "right"]) {
+        const flipper = flippers[side];
+        if (!flipper) continue;
+        const difference = flipper.targetAngle - flipper.currentAngle;
+        flipper.currentAngle += difference * flipper.speed;
+        if (Math.abs(difference) < 0.002) {
+            flipper.currentAngle = flipper.targetAngle;
+        }
+    }
 }
 
-function updateFlippers() {
-    updateFlipper(flippers.left);
-    updateFlipper(flippers.right);
+function clampSpeed() {
+    const speed = Math.hypot(ball.vx, ball.vy);
+    if (speed > MAX_SPEED) {
+        const scale = MAX_SPEED / speed;
+        ball.vx *= scale;
+        ball.vy *= scale;
+    }
+}
+
+function collideWithWalls() {
+    const minX = 38 + ball.radius;
+    const maxX = 562 - ball.radius;
+    const minY = 38 + ball.radius;
+
+    if (ball.x < minX) {
+        ball.x = minX;
+        ball.vx = Math.abs(ball.vx) * WALL_BOUNCE;
+    }
+    if (ball.x > maxX) {
+        ball.x = maxX;
+        ball.vx = -Math.abs(ball.vx) * WALL_BOUNCE;
+    }
+    if (ball.y < minY) {
+        ball.y = minY;
+        ball.vy = Math.abs(ball.vy) * WALL_BOUNCE;
+    }
+}
+
+function collideWithBottom() {
+    if (ball.y < 820) return;
+
+    if (ball.x < 120 || ball.x > 480) {
+        const bottom = 880 - ball.radius;
+        if (ball.y > bottom) {
+            ball.y = bottom;
+            ball.vy = -Math.abs(ball.vy) * WALL_BOUNCE;
+        }
+    }
+}
+
+function collideWithBumpers() {
+    for (const bumper of bumpers) {
+        const dx = ball.x - bumper.x;
+        const dy = ball.y - bumper.y;
+        const distance = Math.hypot(dx, dy);
+        const minimum = ball.radius + bumper.radius;
+
+        if (distance >= minimum) continue;
+
+        const nx = distance > 0.001 ? dx / distance : 0;
+        const ny = distance > 0.001 ? dy / distance : -1;
+
+        ball.x = bumper.x + nx * minimum;
+        ball.y = bumper.y + ny * minimum;
+
+        const velocityAlongNormal = ball.vx * nx + ball.vy * ny;
+        if (velocityAlongNormal < 0) {
+            ball.vx -= 2 * velocityAlongNormal * nx;
+            ball.vy -= 2 * velocityAlongNormal * ny;
+        }
+
+        ball.vx += nx * 4;
+        ball.vy += ny * 4;
+        bumper.flash = 8;
+    }
+}
+
+function collideWithFlipper(flipper) {
+    if (!flipper) return;
+
+    const direction = flipper.side === "left" ? 1 : -1;
+    const angle = flipper.currentAngle;
+    const dx = Math.cos(angle) * direction;
+    const dy = Math.sin(angle) * direction;
+
+    const px = ball.x - flipper.x;
+    const py = ball.y - flipper.y;
+    let projection = px * dx + py * dy;
+    projection = Math.max(0, Math.min(flipper.length, projection));
+
+    const closestX = flipper.x + dx * projection;
+    const closestY = flipper.y + dy * projection;
+    const diffX = ball.x - closestX;
+    const diffY = ball.y - closestY;
+    const distance = Math.hypot(diffX, diffY);
+    const minimum = ball.radius + flipper.width / 2;
+
+    if (distance >= minimum) return;
+
+    const nx = distance > 0.001 ? diffX / distance : 0;
+    const ny = distance > 0.001 ? diffY / distance : -1;
+
+    ball.x = closestX + nx * minimum;
+    ball.y = closestY + ny * minimum;
+
+    const velocityAlongNormal = ball.vx * nx + ball.vy * ny;
+    if (velocityAlongNormal < 0) {
+        ball.vx -= 2 * velocityAlongNormal * nx;
+        ball.vy -= 2 * velocityAlongNormal * ny;
+    }
+
+    if (flipper.targetAngle !== 0) {
+        ball.vy -= 7;
+        ball.vx += nx * 2;
+    }
 }
 
 export function stepPhysics() {
-    if (!world) return;
-    updateFlippers();
-    world.step();
-}
+    if (!ball) return;
 
-export function getFlippers() {
-    return flippers;
+    updateFlippers();
+    for (const bumper of bumpers) {
+        if (bumper.flash > 0) bumper.flash--;
+    }
+
+    if (!ballActive) return;
+
+    ball.vy += GRAVITY;
+    ball.vx *= AIR_DAMPING;
+    ball.vy *= AIR_DAMPING;
+    ball.x += ball.vx;
+    ball.y += ball.vy;
+
+    collideWithWalls();
+    collideWithBottom();
+    collideWithBumpers();
+    collideWithFlipper(flippers.left);
+    collideWithFlipper(flippers.right);
+    clampSpeed();
 }
