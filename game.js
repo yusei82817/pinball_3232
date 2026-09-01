@@ -50,7 +50,6 @@ function resizeCanvas() {
     canvas.style.height = `${TABLE_HEIGHT * scale}px`;
     canvas.width = TABLE_WIDTH * dpr;
     canvas.height = TABLE_HEIGHT * dpr;
-
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
@@ -62,18 +61,8 @@ function updateUI() {
     if (ballsElement) ballsElement.textContent = balls;
 }
 
-function addScore(value) {
-    score += value;
-    updateUI();
-}
-
-// ------------------------------------------------------------
-// Physics setup
-// ------------------------------------------------------------
-
 await createPhysics();
 
-// Physics coordinates are in the same 600x900 coordinate space.
 createWall(20, 450, 0, 40, 900, 40);
 createWall(580, 450, 0, 40, 900, 40);
 createWall(300, 20, 0, 560, 40, 40);
@@ -82,23 +71,14 @@ createBall();
 const ballBody = getBallBody();
 
 const bumperPositions = [
-    [180, 250],
-    [300, 200],
-    [420, 250],
-    [220, 360],
-    [380, 360]
+    [180, 250], [300, 200], [420, 250],
+    [220, 360], [380, 360]
 ];
 
-for (const [x, y] of bumperPositions) {
-    createBumper(x, y);
-}
+for (const [x, y] of bumperPositions) createBumper(x, y);
 
 createFlipper(220, 760, "left");
 createFlipper(380, 760, "right");
-
-// ------------------------------------------------------------
-// Input
-// ------------------------------------------------------------
 
 const keys = Object.create(null);
 
@@ -122,58 +102,39 @@ function updateInput() {
     setFlipperTarget("right", !!keys.KeyD);
 }
 
-// ------------------------------------------------------------
-// Drawing
-// ------------------------------------------------------------
-
 function drawTable() {
     ctx.clearRect(0, 0, TABLE_WIDTH, TABLE_HEIGHT);
 
     ctx.fillStyle = "#07110b";
     ctx.fillRect(0, 0, TABLE_WIDTH, TABLE_HEIGHT);
 
-    // Inner playfield
     ctx.fillStyle = "#102b1b";
     ctx.fillRect(20, 20, 560, 860);
 
-    // Grid
     ctx.strokeStyle = "rgba(100,255,150,0.08)";
     ctx.lineWidth = 1;
 
     for (let x = 40; x < 580; x += 40) {
-        ctx.beginPath();
-        ctx.moveTo(x, 20);
-        ctx.lineTo(x, 880);
-        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x, 20); ctx.lineTo(x, 880); ctx.stroke();
     }
-
     for (let y = 40; y < 880; y += 40) {
-        ctx.beginPath();
-        ctx.moveTo(20, y);
-        ctx.lineTo(580, y);
-        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(20, y); ctx.lineTo(580, y); ctx.stroke();
     }
 
-    // Outer frame
     ctx.strokeStyle = "#d8d8d8";
     ctx.lineWidth = 12;
     ctx.strokeRect(20, 20, 560, 860);
 
-    // Inner frame
     ctx.strokeStyle = "#777";
     ctx.lineWidth = 3;
     ctx.strokeRect(32, 32, 536, 836);
 
-    // Bottom drain opening
     ctx.fillStyle = "#030303";
     ctx.fillRect(120, 820, 360, 60);
 
     ctx.strokeStyle = "#888";
     ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(120, 820);
-    ctx.lineTo(480, 820);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(120, 820); ctx.lineTo(480, 820); ctx.stroke();
 }
 
 function drawBumpers() {
@@ -197,27 +158,26 @@ function drawBumpers() {
 }
 
 function drawFlipper(flipper) {
+    if (!flipper) return;
+
     const angle = getFlipperAngle(flipper.side);
     const length = flipper.length;
-    const x = flipper.x;
-    const y = flipper.y;
+    const direction = flipper.side === "left" ? 1 : -1;
 
     ctx.save();
-    ctx.translate(x, y);
+    ctx.translate(flipper.x, flipper.y);
     ctx.rotate(angle);
 
     ctx.beginPath();
     ctx.roundRect(
-        flipper.side === "left" ? 0 : -length,
+        direction === 1 ? 0 : -length,
         -flipper.width / 2,
         length,
         flipper.width,
         flipper.width / 2
     );
-
     ctx.fillStyle = "#e33";
     ctx.fill();
-
     ctx.strokeStyle = "#ff9999";
     ctx.lineWidth = 3;
     ctx.stroke();
@@ -239,7 +199,8 @@ function drawFlippers() {
 function drawBall() {
     if (!ballBody) return;
 
-    const p = ballBody.translation();
+    // 2D physicsではballBodyは{x,y,vx,vy}のオブジェクト。
+    const p = ballBody;
 
     ctx.beginPath();
     ctx.arc(p.x, p.y, BALL_RADIUS, 0, Math.PI * 2);
@@ -270,7 +231,6 @@ function drawGameOver() {
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 42px sans-serif";
     ctx.fillText("GAME OVER", 300, 425);
-
     ctx.font = "20px sans-serif";
     ctx.fillText("Press R to restart", 300, 475);
     ctx.textAlign = "left";
@@ -283,10 +243,6 @@ function render() {
     drawBall();
     drawGameOver();
 }
-
-// ------------------------------------------------------------
-// Game state
-// ------------------------------------------------------------
 
 function updateBallState() {
     if (!isBallActive() || !isBallLost()) return;
@@ -310,13 +266,8 @@ function resetGame() {
     updateUI();
 }
 
-// ------------------------------------------------------------
-// Main loop
-// ------------------------------------------------------------
-
 function animate() {
     requestAnimationFrame(animate);
-
     updateInput();
     stepPhysics();
     updateBallState();
