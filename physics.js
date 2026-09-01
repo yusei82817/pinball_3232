@@ -4,7 +4,7 @@
 // Lightweight 2D physics for Canvas
 // ============================================================
 
-const TABLE_WIDTH = 600;
+const TABLE_WIDTH = 400;
 const TABLE_HEIGHT = 900;
 const BALL_RADIUS = 14;
 const GRAVITY = 0.28;
